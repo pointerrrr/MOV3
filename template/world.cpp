@@ -183,7 +183,7 @@ void World::ScrollX( const int offset )
 		if (offset < 0)
 		{
 			for (int x = 0; x < o; x++) backup[x] = line[x];
-			for (int x = 0; x < GRIDWIDTH - o; x++) line[x] = line[x + 2];
+			for (int x = 0; x < GRIDWIDTH - o; x++) line[x] = line[x + o];
 			for (int x = 0; x < o; x++) line[GRIDWIDTH - o + x] = backup[x];
 		}
 		else
@@ -218,7 +218,7 @@ void World::LoadSky( const char* filename, const char* bin_name )
 	// attempt to load skydome from binary file
 	ifstream f( bin_name, ios::binary );
 	float* pixels = 0;
-	if (f)
+	if (f.is_open())
 	{
 		printf( "loading cached hdr data... " );
 		f.read( (char*)&skySize.x, sizeof( skySize.x ) );
@@ -478,10 +478,64 @@ uint World::CreateSprite( const int3 pos, const int3 size, const int frames )
 		SpriteFrame* frame = new SpriteFrame();
 		frame->size = size;
 		frame->buffer = new unsigned char[voxelsPerFrame];
-		for (int x = 0; x < size.x; x++) for (int y = 0; y < size.y; y++) for (int z = 0; z < size.z; z++)
+		const uint bx = (pos.x / BRICKDIM) & (GRIDWIDTH - 1);
+		const uint by = (pos.y / BRICKDIM) & (GRIDHEIGHT - 1);
+		const uint bz = (pos.z / BRICKDIM) & (GRIDDEPTH - 1);
+		uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+		const uint lx = pos.x & (BRICKDIM - 1), ly = pos.y & (BRICKDIM - 1), lz = pos.z & (BRICKDIM - 1);
+		uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM;
+		
+		int dx = pos.x % BRICKDIM;
+		int dy = pos.y % BRICKDIM;
+		int dz = pos.z % BRICKDIM;
+		
+		int mx = GRIDWIDTH - ((pos.x / BRICKDIM) & (GRIDWIDTH - 1));
+		int my = GRIDHEIGHT - ((pos.y / BRICKDIM) & (GRIDWIDTH - 1));
+		int mz = GRIDDEPTH - ((pos.z / BRICKDIM) & (GRIDWIDTH - 1));
+
+		for (int z = 0; z < size.z; z++)
 		{
-			uint v = Get( i * size.x + x + pos.x, y + pos.y, z + pos.z );
-			frame->buffer[x + y * size.x + z * size.x * size.y] = v;
+			if (++dz == (GRIDDEPTH - 1))
+			{
+				cellIdx += GRIDWIDTH;
+				if (--mz < 0)
+				{
+					cellIdx -= (GRIDDEPTH - 1) * GRIDWIDTH;
+					mz = GRIDDEPTH - 1;
+				}
+				dz = 0;
+			}
+			for (int y = 0; y < size.y; y++)
+			{
+				if (++dy == (GRIDHEIGHT - 1))
+				{
+					cellIdx += GRIDWIDTH * GRIDDEPTH;
+					if (--my < 0)
+					{
+						cellIdx -= (GRIDHEIGHT - 1) * GRIDWIDTH * GRIDDEPTH;
+						my = GRIDHEIGHT - 1;
+					}
+					dy = 0;
+				}
+				for (int x = 0; x < size.x; x++)
+				{
+					if (++dx == (GRIDWIDTH - 1))
+					{
+						cellIdx++;
+						if (--mx < 0)
+						{
+							cellIdx -= (GRIDWIDTH - 1);
+							mx = GRIDWIDTH - 1;
+						}
+						dx = 0;
+					}
+					//uint v = Get(cellIdx, brickIdx++);
+					uint v = Get(i * size.x + x + pos.x, y + pos.y, z + pos.z);
+					frame->buffer[x + y * size.x + z * size.x * size.y] = v;
+				}
+
+			}
+
 		}
 		newSprite->frame.push_back( frame );
 	}
@@ -514,13 +568,21 @@ void World::EraseSprite( const uint idx )
 	if (lastPos.x == -9999) return;
 	const SpriteFrame* backup = sprite[idx]->backup;
 	const int3 s = backup->size;
-	for (int i = 0, w = 0; w < s.z; w++) for (int v = 0; v < s.y; v++) for (int u = 0; u < s.x; u++, i++)
-		Set( lastPos.x + u, lastPos.y + v, lastPos.z + w, backup->buffer[i] );
+	for (int i = 0, w = 0; w < s.z; w++)
+	{
+		for (int v = 0; v < s.y; v++)
+		{
+			for (int u = 0; u < s.x; u++, i++)
+			{
+				Set(lastPos.x + u, lastPos.y + v, lastPos.z + w, backup->buffer[i]);
+			}
+		}
+	}
 }
 
 // World::DrawSprite (private; called from World::Commit)
 // ----------------------------------------------------------------------------
-void World::DrawSprite( const uint idx )
+_declspec(noinline) void World::DrawSprite( const uint idx )
 {
 	// draw sprite at new location
 	const int3& pos = sprite[idx]->currPos;
@@ -528,12 +590,83 @@ void World::DrawSprite( const uint idx )
 	{
 		const SpriteFrame* frame = sprite[idx]->frame[sprite[idx]->currFrame];
 		SpriteFrame* backup = sprite[idx]->backup;
+
 		const int3& s = backup->size = frame->size;
-		for (int i = 0, w = 0; w < s.z; w++) for (int v = 0; v < s.y; v++) for (int u = 0; u < s.x; u++, i++)
+
+		uchar* frameBuffer = frame->buffer;
+		uchar* backupBuffer = backup->buffer;
+
+		uint bx = (pos.x / BRICKDIM) & (GRIDWIDTH - 1);
+		uint by = (pos.y / BRICKDIM) & (GRIDHEIGHT - 1);
+		uint bz = (pos.z / BRICKDIM) & (GRIDDEPTH - 1);
+		int sbx = bx, sby = by, sbz = bz;
+		uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+		uint lx = pos.x & (BRICKDIM - 1), ly = pos.y & (BRICKDIM - 1), lz = pos.z & (BRICKDIM - 1);
+		uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM;
+
+		uint slx = lx, sly = ly;
+
+		int dx = pos.x % BRICKDIM;
+		int dy = pos.y % BRICKDIM;
+		int dz = pos.z % BRICKDIM;
+
+		int i = 0;
+
+		int mx = GRIDWIDTH - ((pos.x / BRICKDIM) & (GRIDWIDTH - 1));
+		int my = GRIDHEIGHT - ((pos.y / BRICKDIM) & (GRIDWIDTH - 1));
+		int mz = GRIDDEPTH - ((pos.z / BRICKDIM) & (GRIDWIDTH - 1));
+
+		for (int w = 0; w < s.z; w++)
 		{
-			const uint voxel = frame->buffer[i];
-			backup->buffer[i] = Get( pos.x + u, pos.y + v, pos.z + w );
-			if (voxel != 0) Set( pos.x + u, pos.y + v, pos.z + w, voxel );
+			for (int v = 0; v < s.y; v++)
+			{
+				for (int u = 0; u < s.x; u++)
+				{
+					const uint voxel = frameBuffer[i];
+
+					int x = pos.x + u;
+					int y = pos.y + v;
+					int z = pos.z + w;
+					const uint abx = (x / BRICKDIM) & (GRIDWIDTH - 1);
+					const uint aby = (y / BRICKDIM) & (GRIDHEIGHT - 1);
+					const uint abz = (z / BRICKDIM) & (GRIDDEPTH - 1);
+					uint acellIdx = abx + abz * GRIDWIDTH + aby * GRIDWIDTH * GRIDDEPTH;
+
+					if (cellIdx != acellIdx)
+					{
+						int x = 0;
+					}
+
+					//const uint alx = x & (BRICKDIM - 1), aly = y & (BRICKDIM - 1), alz = z & (BRICKDIM - 1);
+					//brickIdx = alx + aly * BRICKDIM + alz * BRICKDIM * BRICKDIM;
+					backupBuffer[i] = Get(acellIdx, brickIdx++);
+					if (voxel != 0)
+						Set(pos.x + u, pos.y + v, pos.z + w, voxel);
+					i++;
+					
+					if (++lx == BRICKDIM)
+					{
+						brickIdx -= BRICKDIM;
+						lx = 0;
+					}
+				}
+				brickIdx += BRICKDIM - (lx - slx);
+				lx = slx;
+				
+				if (++ly == BRICKDIM)
+				{
+					brickIdx -= BRICKDIM * BRICKDIM;
+					ly = 0;
+				}
+			}
+			brickIdx += BRICKDIM * BRICKDIM - (ly - sly) * BRICKDIM;
+			ly = sly;
+			if (++lz == BRICKDIM)
+			{
+				brickIdx -= BRICKDIM * BRICKDIM * BRICKDIM;
+				lz = 0;
+			}
+
 		}
 	}
 	// store this location so we can remove the sprite later
@@ -662,10 +795,18 @@ void World::SetParticle( const uint set, const uint idx, const uint3 pos, const 
 void World::DrawParticles( const uint set )
 {
 	if (particles[set]->count == 0 || particles[set]->voxel[0].x == -9999) return; // inactive
+	
 	for (uint s = particles[set]->count, i = 0; i < s; i++)
 	{
 		const uint4 v = particles[set]->voxel[i];
-		particles[set]->backup[i] = make_uint4( v.x, v.y, v.z, Get( v.x, v.y, v.z ) );
+		const uint bx = (v.x / BRICKDIM) & (GRIDWIDTH - 1);
+		const uint by = (v.y / BRICKDIM) & (GRIDHEIGHT - 1);
+		const uint bz = (v.z / BRICKDIM) & (GRIDDEPTH - 1);
+		const uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+		const uint lx = v.x & (BRICKDIM - 1), ly = v.y & (BRICKDIM - 1), lz = v.z & (BRICKDIM - 1);
+		const uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM;
+
+		particles[set]->backup[i] = make_uint4( v.x, v.y, v.z, Get( cellIdx, brickIdx ) );
 		Set( v.x, v.y, v.z, v.w );
 	}
 }
@@ -1088,7 +1229,8 @@ void World::Commit()
 	// add the sprites and particles to the world
 	for (int s = (int)sprite.size(), i = 0; i < s; i++)
 	{
-		if (sprite[i]->hasShadow) DrawSpriteShadow( i );
+		if (sprite[i]->hasShadow)
+			DrawSpriteShadow( i );
 		DrawSprite( i );
 	}
 	for (int s = (int)particles.size(), i = 0; i < s; i++) DrawParticles( i );

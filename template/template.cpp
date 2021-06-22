@@ -41,9 +41,34 @@ void WorldZScroll( const int offset ) { world->ScrollZ( offset ); }
 void Plot( const uint x, const uint y, const uint z, const uint c ) { world->Set( x, y, z, c ); }
 void Plot( const uint3 pos, const uint c ) { world->Set( pos.x, pos.y, pos.z, c ); }
 void Plot( const int3 pos, const uint c ) { world->Set( pos.x, pos.y, pos.z, c ); }
-uint Read( const int x, const int y, const int z ) { return world->Get( x, y, z ); }
-uint Read( const int3 pos ) { return world->Get( pos.x, pos.y, pos.z ); }
-uint Read( const uint3 pos ) { return world->Get( pos.x, pos.y, pos.z ); }
+uint Read( const int x, const int y, const int z )
+{
+	const uint bx = (x / BRICKDIM) & (GRIDWIDTH - 1);
+	const uint by = (y / BRICKDIM) & (GRIDHEIGHT - 1);
+	const uint bz = (z / BRICKDIM) & (GRIDDEPTH - 1);
+	const uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+	const uint lx = x & (BRICKDIM - 1), ly = y & (BRICKDIM - 1), lz = z & (BRICKDIM - 1);
+	const uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM;
+	return world->Get( cellIdx, brickIdx);
+}
+uint Read( const int3 pos ) {
+	const uint bx = (pos.x / BRICKDIM) & (GRIDWIDTH - 1);
+	const uint by = (pos.y / BRICKDIM) & (GRIDHEIGHT - 1);
+	const uint bz = (pos.z / BRICKDIM) & (GRIDDEPTH - 1);
+	const uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+	const uint lx = pos.x & (BRICKDIM - 1), ly = pos.y & (BRICKDIM - 1), lz = pos.z & (BRICKDIM - 1);
+	const uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM;
+	return world->Get(cellIdx, brickIdx );
+}
+uint Read( const uint3 pos ) {
+	const uint bx = (pos.x / BRICKDIM) & (GRIDWIDTH - 1);
+	const uint by = (pos.y / BRICKDIM) & (GRIDHEIGHT - 1);
+	const uint bz = (pos.z / BRICKDIM) & (GRIDDEPTH - 1);
+	const uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+	const uint lx = pos.x & (BRICKDIM - 1), ly = pos.y & (BRICKDIM - 1), lz = pos.z & (BRICKDIM - 1);
+	const uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM; 
+	return world->Get( cellIdx, brickIdx );
+}
 void Sphere( const float x, const float y, const float z, const float r, const uint c )
 {
 	world->Sphere( x, y, z, r, c );
@@ -297,7 +322,9 @@ void main()
 		timer.reset();
 		world->Render();
 		game->Tick( deltaTime );
-		if (GetAsyncKeyState( VK_LSHIFT )) for( int i = 0; i < 3; i++ ) game->Tick( deltaTime );
+		if (GetAsyncKeyState( VK_LSHIFT ))
+			for( int i = 0; i < 3; i++ ) 
+				game->Tick( deltaTime );
 		world->Commit();
 	#ifdef USE_CPU_DEVICE
 		// copy the destination buffer to the renderTarget texture

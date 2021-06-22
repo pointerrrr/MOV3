@@ -152,7 +152,23 @@ private:
 	void DrawTileVoxels( const uint cellIdx, const uchar* voxels, const uint zeroes );
 public:
 	// low-level voxel access
-	__forceinline uint Get( const uint x, const uint y, const uint z )
+	//__forceinline uint Get( const uint x, const uint y, const uint z )
+	/*_declspec(noinline)*/ __forceinline uint Get(const uint cellIdx, const uint brickIdx /* const uint x, const uint y, const uint z*/)
+	{
+		// calculate brick location in top-level grid
+		//const uint bx = (x / BRICKDIM) & (GRIDWIDTH - 1);
+		//const uint by = (y / BRICKDIM) & (GRIDHEIGHT - 1);
+		//const uint bz = (z / BRICKDIM) & (GRIDDEPTH - 1);
+		//const uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+		const uint g = grid[cellIdx];
+		if ((g & 1) == 0 /* this is currently a 'solid' grid cell */) return g >> 1;
+		// calculate the position of the voxel inside the brick
+		//const uint lx = x & (BRICKDIM - 1), ly = y & (BRICKDIM - 1), lz = z & (BRICKDIM - 1);
+		//return brick[(g >> 1) * BRICKSIZE + lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM];
+		return brick[(g >> 1) * BRICKSIZE + brickIdx];
+	}
+
+	__forceinline uint Get(const uint x, const uint y, const uint z)
 	{
 		// calculate brick location in top-level grid
 		const uint bx = (x / BRICKDIM) & (GRIDWIDTH - 1);
@@ -165,6 +181,7 @@ public:
 		const uint lx = x & (BRICKDIM - 1), ly = y & (BRICKDIM - 1), lz = z & (BRICKDIM - 1);
 		return brick[(g >> 1) * BRICKSIZE + lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM];
 	}
+
 	__forceinline void Set( const uint x, const uint y, const uint z, const uint v /* actually an 8-bit value */ )
 	{
 		// calculate brick location in top-level grid
