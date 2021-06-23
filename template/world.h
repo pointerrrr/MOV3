@@ -1,6 +1,6 @@
 #pragma once
 
-#define THREADSAFEWORLD 1
+#define THREADSAFEWORLD 0
 #define SQR(x) ((x)*(x))
 #define TILESIZE	8
 #define TILESIZE2	(TILESIZE * TILESIZE)
@@ -43,6 +43,8 @@ public:
 	bool hasShadow = false;				// set to true to enable a drop shadow
 	uint4* preShadow = 0;				// room for backup of voxels overwritten by shadow
 	uint shadowVoxels = 0;				// size of backup voxel array
+	bool draw = true;
+	bool remove = true;
 };
 
 class Particles
@@ -153,7 +155,7 @@ private:
 public:
 	// low-level voxel access
 	//__forceinline uint Get( const uint x, const uint y, const uint z )
-	/*_declspec(noinline)*/ __forceinline uint Get(const uint cellIdx, const uint brickIdx /* const uint x, const uint y, const uint z*/)
+	__forceinline uint Get(const uint cellIdx, const uint brickIdx /* const uint x, const uint y, const uint z*/)
 	{
 		// calculate brick location in top-level grid
 		const uint g = grid[cellIdx];
@@ -177,14 +179,18 @@ public:
 		return brick[(g >> 1) * BRICKSIZE + lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM];
 	}
 
-	__forceinline void Set( const uint x, const uint y, const uint z, const uint v /* actually an 8-bit value */ )
+	__forceinline /*_declspec(noinline)*/ void Set( const uint x, const uint y, const uint z, const uint v /* actually an 8-bit value */ )
 	{
 		// calculate brick location in top-level grid
-		const uint bx = x / BRICKDIM;
+		/*const uint bx = x / BRICKDIM;
 		const uint by = y / BRICKDIM;
-		const uint bz = z / BRICKDIM;
-		if (bx >= GRIDWIDTH || by >= GRIDHEIGHT || bz >= GRIDDEPTH) return;
-		const uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+		const uint bz = z / BRICKDIM;*/
+		const uint bx = x >> 3;
+		const uint by = y >> 3;
+		const uint bz = z >> 3;
+		if (bx >= GRIDWIDTH || by >= GRIDHEIGHT || bz >= GRIDDEPTH)
+			return;
+		const uint cellIdx = bx + (bz << 7) + (by << 14);
 		// obtain current brick identifier from top-level grid
 		uint g = grid[cellIdx], g1 = g >> 1;
 		if ((g & 1) == 0 /* this is currently a 'solid' grid cell */)

@@ -478,64 +478,107 @@ uint World::CreateSprite( const int3 pos, const int3 size, const int frames )
 		SpriteFrame* frame = new SpriteFrame();
 		frame->size = size;
 		frame->buffer = new unsigned char[voxelsPerFrame];
-		const uint bx = (pos.x / BRICKDIM) & (GRIDWIDTH - 1);
-		const uint by = (pos.y / BRICKDIM) & (GRIDHEIGHT - 1);
-		const uint bz = (pos.z / BRICKDIM) & (GRIDDEPTH - 1);
-		uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
-		const uint lx = pos.x & (BRICKDIM - 1), ly = pos.y & (BRICKDIM - 1), lz = pos.z & (BRICKDIM - 1);
-		uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM;
 		
+		uint bx = (pos.x / BRICKDIM) & (GRIDWIDTH - 1);
+		uint by = (pos.y / BRICKDIM) & (GRIDHEIGHT - 1);
+		uint bz = (pos.z / BRICKDIM) & (GRIDDEPTH - 1);
+		int sbx = bx, sby = by, sbz = bz;
+		uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
+		uint lx = pos.x & (BRICKDIM - 1), ly = pos.y & (BRICKDIM - 1), lz = pos.z & (BRICKDIM - 1);
+		uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM;
+
+		uint slx = lx, sly = ly;
+
 		int dx = pos.x % BRICKDIM;
 		int dy = pos.y % BRICKDIM;
 		int dz = pos.z % BRICKDIM;
-		
-		int mx = GRIDWIDTH - ((pos.x / BRICKDIM) & (GRIDWIDTH - 1));
-		int my = GRIDHEIGHT - ((pos.y / BRICKDIM) & (GRIDWIDTH - 1));
-		int mz = GRIDDEPTH - ((pos.z / BRICKDIM) & (GRIDWIDTH - 1));
+
+		int odx = dx, ody = dy, odz = dz;
+
+		int mx = ((pos.x / BRICKDIM) & (GRIDWIDTH - 1));
+		int my = ((pos.y / BRICKDIM) & (GRIDHEIGHT - 1));
+		int mz = ((pos.z / BRICKDIM) & (GRIDDEPTH - 1));
+
+		int omx = mx, omy = my, omz = mz;
 
 		for (int z = 0; z < size.z; z++)
 		{
-			if (++dz == (GRIDDEPTH - 1))
-			{
-				cellIdx += GRIDWIDTH;
-				if (--mz < 0)
-				{
-					cellIdx -= (GRIDDEPTH - 1) * GRIDWIDTH;
-					mz = GRIDDEPTH - 1;
-				}
-				dz = 0;
-			}
+			int o2Idx = cellIdx;
 			for (int y = 0; y < size.y; y++)
 			{
-				if (++dy == (GRIDHEIGHT - 1))
-				{
-					cellIdx += GRIDWIDTH * GRIDDEPTH;
-					if (--my < 0)
-					{
-						cellIdx -= (GRIDHEIGHT - 1) * GRIDWIDTH * GRIDDEPTH;
-						my = GRIDHEIGHT - 1;
-					}
-					dy = 0;
-				}
+				int oIdx = cellIdx;
 				for (int x = 0; x < size.x; x++)
 				{
-					if (++dx == (GRIDWIDTH - 1))
-					{
-						cellIdx++;
-						if (--mx < 0)
-						{
-							cellIdx -= (GRIDWIDTH - 1);
-							mx = GRIDWIDTH - 1;
-						}
-						dx = 0;
-					}
-					//uint v = Get(cellIdx, brickIdx++);
-					uint v = Get(i * size.x + x + pos.x, y + pos.y, z + pos.z);
+					uint g = grid[cellIdx];
+
+					uint v = ((g & 1) == 0) ? g >> 1: brick[(g >> 1) * BRICKSIZE + brickIdx];
+					brickIdx++;
 					frame->buffer[x + y * size.x + z * size.x * size.y] = v;
+					if (++dx == BRICKDIM)
+					{
+						dx = 0;
+						cellIdx++;
+						if (++mx == GRIDWIDTH)
+						{
+							cellIdx -= GRIDWIDTH;
+							mx = 0;
+						}
+					}
+					if (++lx == BRICKDIM)
+					{
+						brickIdx -= BRICKDIM;
+						lx = 0;
+					}
 				}
 
+				cellIdx = oIdx;
+				dx = odx;
+				mx = omx;
+
+				if (++dy == BRICKDIM)
+				{
+					dy = 0;
+					cellIdx += GRIDWIDTH * GRIDDEPTH;
+					if (++my == GRIDDEPTH)
+					{
+						cellIdx -= GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH;
+						my = 0;
+					}
+					oIdx = cellIdx;
+				}
+
+				brickIdx += BRICKDIM - (lx - slx);
+				lx = slx;
+				if (++ly == BRICKDIM)
+				{
+					brickIdx -= BRICKDIM * BRICKDIM;
+					ly = 0;
+				}
 			}
 
+			dy = ody;
+			my = omy;
+			cellIdx = o2Idx;
+
+			if (++dz == BRICKDIM)
+			{
+				dz = 0;
+				cellIdx += GRIDWIDTH;
+				if (++mz == GRIDDEPTH)
+				{
+					cellIdx -= GRIDWIDTH * GRIDDEPTH;
+					mz = 0;
+				}
+				o2Idx = cellIdx;
+			}
+
+			brickIdx += BRICKDIM * BRICKDIM - (ly - sly) * BRICKDIM;
+			ly = sly;
+			if (++lz == BRICKDIM)
+			{
+				brickIdx -= BRICKDIM * BRICKDIM * BRICKDIM;
+				lz = 0;
+			}
 		}
 		newSprite->frame.push_back( frame );
 	}
@@ -568,6 +611,18 @@ void World::EraseSprite( const uint idx )
 	if (lastPos.x == -9999) return;
 	const SpriteFrame* backup = sprite[idx]->backup;
 	const int3 s = backup->size;
+
+	uint bx = lastPos.x >> 3;
+	uint by = lastPos.y >> 3;
+	uint bz = lastPos.z >> 3;
+
+	uint cellIdx = bx + (bz << 7) + (by << 14);
+
+	uint dx = lastPos.x & 7;
+	uint dy = lastPos.y & 7;
+	uint dz = lastPos.z & 7;
+
+
 	for (int i = 0, w = 0; w < s.z; w++)
 	{
 		for (int v = 0; v < s.y; v++)
@@ -599,26 +654,26 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 		uint bx = (pos.x / BRICKDIM) & (GRIDWIDTH - 1);
 		uint by = (pos.y / BRICKDIM) & (GRIDHEIGHT - 1);
 		uint bz = (pos.z / BRICKDIM) & (GRIDDEPTH - 1);
-		int sbx = bx, sby = by, sbz = bz;
+		uint sbx = bx, sby = by, sbz = bz;
 		uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
 		uint lx = pos.x & (BRICKDIM - 1), ly = pos.y & (BRICKDIM - 1), lz = pos.z & (BRICKDIM - 1);
 		uint brickIdx = lx + ly * BRICKDIM + lz * BRICKDIM * BRICKDIM;
 
 		uint slx = lx, sly = ly;
 
-		int dx = pos.x % BRICKDIM;
-		int dy = pos.y % BRICKDIM;
-		int dz = pos.z % BRICKDIM;
+		uint dx = pos.x % BRICKDIM;
+		uint dy = pos.y % BRICKDIM;
+		uint dz = pos.z % BRICKDIM;
 
-		int odx = dx, ody = dy, odz = dz;
+		uint odx = dx, ody = dy, odz = dz;
 
 		int i = 0;
 
-		int mx = ((pos.x / BRICKDIM) & (GRIDWIDTH - 1));
-		int my = ((pos.y / BRICKDIM) & (GRIDHEIGHT - 1));
-		int mz = ((pos.z / BRICKDIM) & (GRIDDEPTH - 1));
+		uint mx = ((pos.x / BRICKDIM) & (GRIDWIDTH - 1));
+		uint my = ((pos.y / BRICKDIM) & (GRIDHEIGHT - 1));
+		uint mz = ((pos.z / BRICKDIM) & (GRIDDEPTH - 1));
 
-		int omx = mx, omy = my, omz = mz;
+		uint omx = mx, omy = my, omz = mz;
 
 		for (int w = 0; w < s.z; w++)
 		{
@@ -630,28 +685,10 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 				{
 					const uint voxel = frameBuffer[i];
 
-					/*int x = pos.x + u;
-					int y = pos.y + v;
-					int z = pos.z + w;
-					const uint abx = (x / BRICKDIM) & (GRIDWIDTH - 1);
-					const uint aby = (y / BRICKDIM) & (GRIDHEIGHT - 1);
-					const uint abz = (z / BRICKDIM) & (GRIDDEPTH - 1);
-					uint acellIdx = abx + abz * GRIDWIDTH + aby * GRIDWIDTH * GRIDDEPTH;
-
-					if (cellIdx != acellIdx)
-					{
-						int xasdfadsfasdf = 0;
-					}
-					else
-					{
-						int assdfasdfda = 1;
-					}*/
-
-					//const uint alx = x & (BRICKDIM - 1), aly = y & (BRICKDIM - 1), alz = z & (BRICKDIM - 1);
-					//brickIdx = alx + aly * BRICKDIM + alz * BRICKDIM * BRICKDIM;
 					const uint g = grid[cellIdx];
-					
-					backupBuffer[i] = Get(cellIdx, brickIdx++);
+					const uint gshift = g >> 1;
+					backupBuffer[i] = ((g&1) == 0) ? gshift : brick[gshift * BRICKSIZE + brickIdx];
+					brickIdx++;
 					if (voxel != 0)
 						Set(pos.x + u, pos.y + v, pos.z + w, voxel);
 					i++;
@@ -665,17 +702,14 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 							cellIdx -= GRIDWIDTH;
 							mx = 0;
 						}
-					}
-					if (++lx == BRICKDIM)
-					{
 						brickIdx -= BRICKDIM;
-						lx = 0;
 					}
 				}
+				brickIdx += BRICKDIM - (dx - slx);
 				cellIdx = oIdx;
 				dx = odx;
 				mx = omx;
-
+				
 				if (++dy == BRICKDIM)
 				{
 					dy = 0;
@@ -688,14 +722,15 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 					oIdx = cellIdx;
 				}
 
-				brickIdx += BRICKDIM - (lx - slx);
-				lx = slx;
+				
 				if (++ly == BRICKDIM)
 				{
 					brickIdx -= BRICKDIM * BRICKDIM;
 					ly = 0;
 				}
 			}
+			brickIdx += BRICKDIM * BRICKDIM - (ly - sly) * BRICKDIM;
+			ly = sly;
 			dy = ody;
 			my = omy;
 			cellIdx = o2Idx;
@@ -710,14 +745,18 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 					mz = 0;
 				}
 				o2Idx = cellIdx;
+				brickIdx -= BRICKDIM * BRICKDIM * BRICKDIM;
 			}
 
-			brickIdx += BRICKDIM * BRICKDIM - (ly - sly) * BRICKDIM;
-			ly = sly;
+			
 			if (++lz == BRICKDIM)
 			{
-				brickIdx -= BRICKDIM * BRICKDIM * BRICKDIM;
+				
 				lz = 0;
+			}
+			if (lz != dz)
+			{
+				printf("test");
 			}
 
 		}
@@ -776,7 +815,12 @@ void World::MoveSpriteTo( const uint idx, const uint x, const uint y, const uint
 	// out of bounds checks
 	if (idx >= sprite.size()) return;
 	// set new sprite location and frame
-	sprite[idx]->currPos = make_int3( x, y, z );
+	if (sprite[idx]->currPos.x != x || sprite[idx]->currPos.y != y || sprite[idx]->currPos.z != z)
+	{
+		sprite[idx]->currPos = make_int3(x, y, z);
+		sprite[idx]->draw = true;
+		sprite[idx]->remove = true;
+	}
 }
 
 // World::RemoveSprite
@@ -785,6 +829,8 @@ void World::RemoveSprite( const uint idx )
 {
 	// move sprite to -9999 to keep it from taking CPU cycles
 	sprite[idx]->currPos.x = -9999;
+	sprite[idx]->remove = true;
+	sprite[idx]->draw = false;
 }
 
 // World::SetSpriteFrame
@@ -1282,9 +1328,13 @@ void World::Commit()
 	// add the sprites and particles to the world
 	for (int s = (int)sprite.size(), i = 0; i < s; i++)
 	{
-		if (sprite[i]->hasShadow)
-			DrawSpriteShadow( i );
-		DrawSprite( i );
+		if (sprite[i]->draw)
+		{
+			if (sprite[i]->hasShadow)
+				DrawSpriteShadow(i);
+			DrawSprite(i);
+			sprite[i]->draw = false;
+		}
 	}
 	for (int s = (int)particles.size(), i = 0; i < s; i++) DrawParticles( i );
 	// make sure the previous commit completed
@@ -1336,8 +1386,16 @@ void World::Commit()
 	for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles( i );
 	for (int s = (int)sprite.size(), i = s - 1; i >= 0; i--)
 	{
-		EraseSprite( i );
-		if (sprite[i]->hasShadow) RemoveSpriteShadow( i );
+		if (sprite[i]->remove)
+		{
+			EraseSprite(i);
+			if (sprite[i]->hasShadow) RemoveSpriteShadow(i);
+			if (sprite[i]->currPos.x != -9999)
+			{
+				sprite[i]->remove = false;
+				//sprite[i]->draw = true;
+			}
+		}
 	}
 }
 
