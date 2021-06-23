@@ -610,21 +610,27 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 		int dy = pos.y % BRICKDIM;
 		int dz = pos.z % BRICKDIM;
 
+		int odx = dx, ody = dy, odz = dz;
+
 		int i = 0;
 
-		int mx = GRIDWIDTH - ((pos.x / BRICKDIM) & (GRIDWIDTH - 1));
-		int my = GRIDHEIGHT - ((pos.y / BRICKDIM) & (GRIDWIDTH - 1));
-		int mz = GRIDDEPTH - ((pos.z / BRICKDIM) & (GRIDWIDTH - 1));
+		int mx = ((pos.x / BRICKDIM) & (GRIDWIDTH - 1));
+		int my = ((pos.y / BRICKDIM) & (GRIDHEIGHT - 1));
+		int mz = ((pos.z / BRICKDIM) & (GRIDDEPTH - 1));
+
+		int omx = mx, omy = my, omz = mz;
 
 		for (int w = 0; w < s.z; w++)
 		{
+			int o2Idx = cellIdx;
 			for (int v = 0; v < s.y; v++)
 			{
+				int oIdx = cellIdx;
 				for (int u = 0; u < s.x; u++)
 				{
 					const uint voxel = frameBuffer[i];
 
-					int x = pos.x + u;
+					/*int x = pos.x + u;
 					int y = pos.y + v;
 					int z = pos.z + w;
 					const uint abx = (x / BRICKDIM) & (GRIDWIDTH - 1);
@@ -634,31 +640,78 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 
 					if (cellIdx != acellIdx)
 					{
-						int x = 0;
+						int xasdfadsfasdf = 0;
 					}
+					else
+					{
+						int assdfasdfda = 1;
+					}*/
 
 					//const uint alx = x & (BRICKDIM - 1), aly = y & (BRICKDIM - 1), alz = z & (BRICKDIM - 1);
 					//brickIdx = alx + aly * BRICKDIM + alz * BRICKDIM * BRICKDIM;
-					backupBuffer[i] = Get(acellIdx, brickIdx++);
+					const uint g = grid[cellIdx];
+					
+					backupBuffer[i] = Get(cellIdx, brickIdx++);
 					if (voxel != 0)
 						Set(pos.x + u, pos.y + v, pos.z + w, voxel);
 					i++;
 					
+					if (++dx == BRICKDIM)
+					{
+						dx = 0;
+						cellIdx++;						
+						if (++mx == GRIDWIDTH)
+						{
+							cellIdx -= GRIDWIDTH;
+							mx = 0;
+						}
+					}
 					if (++lx == BRICKDIM)
 					{
 						brickIdx -= BRICKDIM;
 						lx = 0;
 					}
 				}
+				cellIdx = oIdx;
+				dx = odx;
+				mx = omx;
+
+				if (++dy == BRICKDIM)
+				{
+					dy = 0;
+					cellIdx += GRIDWIDTH * GRIDDEPTH;
+					if (++my == GRIDDEPTH)
+					{
+						cellIdx -= GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH;
+						my = 0;
+					}
+					oIdx = cellIdx;
+				}
+
 				brickIdx += BRICKDIM - (lx - slx);
 				lx = slx;
-				
 				if (++ly == BRICKDIM)
 				{
 					brickIdx -= BRICKDIM * BRICKDIM;
 					ly = 0;
 				}
 			}
+			dy = ody;
+			my = omy;
+			cellIdx = o2Idx;
+
+			if (++dz == BRICKDIM)
+			{
+				dz = 0;
+				cellIdx += GRIDWIDTH;
+				if (++mz == GRIDDEPTH)
+				{
+					cellIdx -= GRIDWIDTH * GRIDDEPTH;
+					mz = 0;
+				}
+				o2Idx = cellIdx;
+			}
+
 			brickIdx += BRICKDIM * BRICKDIM - (ly - sly) * BRICKDIM;
 			ly = sly;
 			if (++lz == BRICKDIM)
