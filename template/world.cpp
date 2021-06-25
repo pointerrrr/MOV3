@@ -5,7 +5,7 @@ using namespace Tmpl8;
 
 static const uint gridSize = GRIDSIZE * sizeof( uint );
 static const uint commitSize = BRICKCOMMITSIZE + gridSize;
-static bool* dirtyGrid = new bool[gridSize];
+
 
 // helper defines for inline ray tracing
 #define OFFS_X		((bits >> 5) & 1)			// extract grid plane offset over x (0 or 1)
@@ -52,7 +52,11 @@ World::World( const uint targetID )
 	for (uint i = 0; i < BRICKCOUNT; i++) trash[(i * 31 /* prevent false sharing*/) & (BRICKCOUNT - 1)] = i;
 	// prepare a test world
 	grid = gridOrig = (uint*)_aligned_malloc( GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4, 64 );
+	backupGrid = (uint*)_aligned_malloc(GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4, 64);
+	dirtyGrid = new bool[GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4];
+	memset(dirtyGrid, 0, GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4);
 	memset( grid, 0, GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * sizeof( uint ) );
+	memset(backupGrid, 0, GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * sizeof(uint));
 	DummyWorld();
 	LoadSky( "assets/sky_15.hdr", "assets/sky_15.bin" );
 	brickBuffer->CopyToDevice();
@@ -1338,13 +1342,6 @@ void World::Render()
 
 void World::Commit()
 {
-	static bool first = false;
-	//memset((void*)dirtyGrid, 0, gridSize * sizeof(bool));
-	if (!first)
-	{
-		memcpy(dirtyGrid, grid, gridSize);
-	}
-
 	// add the sprites and particles to the world
 	for (int s = (int)sprite.size(), i = 0; i < s; i++)
 	{
@@ -1401,28 +1398,12 @@ void World::Commit()
 	// bricks and top-level grid have been moved to the final host-side commit buffer; remove sprites and particles
 	// NOTE: this must explicitly happen in reverse order.
 	
-	if (first)
+	
+	for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles(i);
+	for (int s = (int)sprite.size(), i = s - 1; i >= 0; i--)
 	{
-		//for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles(i);
-		for (int s = (int)sprite.size(), i = s - 1; i >= 0; i--)
-		{
-			EraseSprite(i);
-			if (sprite[i]->hasShadow) RemoveSpriteShadow(i);
-		}
-		first = false;
-	}
-	else
-	{
-		
-		for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles(i);
-		
-		for (int s = (int)sprite.size(), i = s - 1; i >= 0; i--)
-		{
-			//EraseSprite(i);
-			if (sprite[i]->hasShadow) RemoveSpriteShadow(i);
-		}
-		memcpy(grid, dirtyGrid, gridSize);
-
+		EraseSprite(i);
+		if (sprite[i]->hasShadow) RemoveSpriteShadow(i);
 	}
 	
 }

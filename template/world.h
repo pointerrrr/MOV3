@@ -215,6 +215,7 @@ public:
 			// we keep track of the number of zeroes, so we can remove fully zeroed bricks
 			brickInfo[newIdx].zeroes = g == 0 ? BRICKSIZE : 0;
 			g1 = newIdx, grid[cellIdx] = g = (newIdx << 1) | 1;
+			dirtyGrid[cellIdx] = true;
 			// brickInfo[newIdx].location = cellIdx; // not used yet
 		}
 		// calculate the position of the voxel inside the brick
@@ -313,6 +314,8 @@ private:
 	// data members
 	mat4 camMat;						// camera matrix to be used for rendering
 	uint* grid = 0, *gridOrig = 0;		// pointer to host-side copy of the top-level grid
+	uint* backupGrid = 0;
+	bool* dirtyGrid = 0;
 	Buffer* brickBuffer;				// OpenCL buffer for the bricks
 	uchar* brick = 0;					// pointer to host-side copy of the bricks
 	uchar* backupBrick = 0;
