@@ -44,7 +44,10 @@ public:
 	uint4* preShadow = 0;				// room for backup of voxels overwritten by shadow
 	uint shadowVoxels = 0;				// size of backup voxel array
 	bool draw = true;
-	bool remove = true;
+	bool draw2 = false;
+	bool remove = false;
+	bool updated = true;
+	bool first = true;
 };
 
 class Particles
@@ -312,6 +315,7 @@ private:
 	uint* grid = 0, *gridOrig = 0;		// pointer to host-side copy of the top-level grid
 	Buffer* brickBuffer;				// OpenCL buffer for the bricks
 	uchar* brick = 0;					// pointer to host-side copy of the bricks
+	uchar* backupBrick = 0;
 	uint* modified = 0;					// bitfield to mark bricks for synchronization
 	BrickInfo* brickInfo = 0;			// maintenance data for bricks: zeroes, location
 	volatile inline static LONG trashHead = BRICKCOUNT;	// thrash circular buffer tail

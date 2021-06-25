@@ -5,6 +5,7 @@ using namespace Tmpl8;
 
 static const uint gridSize = GRIDSIZE * sizeof( uint );
 static const uint commitSize = BRICKCOMMITSIZE + gridSize;
+static bool* dirtyGrid = new bool[gridSize];
 
 // helper defines for inline ray tracing
 #define OFFS_X		((bits >> 5) & 1)			// extract grid plane offset over x (0 or 1)
@@ -42,6 +43,7 @@ World::World( const uint targetID )
 	gridMap = clCreateImage( Kernel::GetContext(), CL_MEM_HOST_NO_ACCESS, &fmt, &desc, 0, 0 );
 	// create brick storage
 	brick = (uchar*)_aligned_malloc( BRICKCOUNT * BRICKSIZE, 64 );
+	backupBrick = (uchar*)_aligned_malloc(BRICKCOUNT * BRICKSIZE, 64);
 	brickBuffer = new Buffer( (BRICKCOUNT * BRICKSIZE) / 4, Buffer::DEFAULT, brick );
 	brickInfo = new BrickInfo[BRICKCOUNT];
 	// create a cyclic array for unused bricks (all of them, for now)
@@ -100,6 +102,7 @@ World::~World()
 	delete renderer;
 	_aligned_free( gridOrig ); // grid itself gets changed after allocation
 	_aligned_free( brick );
+	_aligned_free(backupBrick);
 	delete brickBuffer;
 	delete brickInfo;
 	delete trash;
@@ -523,6 +526,7 @@ uint World::CreateSprite( const int3 pos, const int3 size, const int frames )
 							cellIdx -= GRIDWIDTH;
 							mx = 0;
 						}
+						dirtyGrid[cellIdx] = true;
 					}
 					if (++lx == BRICKDIM)
 					{
@@ -546,7 +550,7 @@ uint World::CreateSprite( const int3 pos, const int3 size, const int frames )
 					}
 					oIdx = cellIdx;
 				}
-
+				dirtyGrid[cellIdx] = true;
 				brickIdx += BRICKDIM - (lx - slx);
 				lx = slx;
 				if (++ly == BRICKDIM)
@@ -571,7 +575,7 @@ uint World::CreateSprite( const int3 pos, const int3 size, const int frames )
 				}
 				o2Idx = cellIdx;
 			}
-
+			dirtyGrid[cellIdx] = true;
 			brickIdx += BRICKDIM * BRICKDIM - (ly - sly) * BRICKDIM;
 			ly = sly;
 			if (++lz == BRICKDIM)
@@ -674,7 +678,8 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 		uint mz = ((pos.z / BRICKDIM) & (GRIDDEPTH - 1));
 
 		uint omx = mx, omy = my, omz = mz;
-
+		uint g = grid[cellIdx];
+		uint gshift = g >> 1;
 		for (int w = 0; w < s.z; w++)
 		{
 			int o2Idx = cellIdx;
@@ -685,8 +690,8 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 				{
 					const uint voxel = frameBuffer[i];
 
-					const uint g = grid[cellIdx];
-					const uint gshift = g >> 1;
+					
+					
 					backupBuffer[i] = ((g&1) == 0) ? gshift : brick[gshift * BRICKSIZE + brickIdx];
 					brickIdx++;
 					if (voxel != 0)
@@ -703,6 +708,8 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 							mx = 0;
 						}
 						brickIdx -= BRICKDIM;
+						g = grid[cellIdx];
+						gshift = g >> 1;
 					}
 				}
 				brickIdx += BRICKDIM - (dx - slx);
@@ -721,7 +728,8 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 					}
 					oIdx = cellIdx;
 				}
-
+				g = grid[cellIdx];
+				gshift = g >> 1;
 				
 				if (++ly == BRICKDIM)
 				{
@@ -747,7 +755,8 @@ _declspec(noinline) void World::DrawSprite( const uint idx )
 				o2Idx = cellIdx;
 				brickIdx -= BRICKDIM * BRICKDIM * BRICKDIM;
 			}
-
+			g = grid[cellIdx];
+			gshift = g >> 1;
 			
 			if (++lz == BRICKDIM)
 			{
@@ -819,7 +828,8 @@ void World::MoveSpriteTo( const uint idx, const uint x, const uint y, const uint
 	{
 		sprite[idx]->currPos = make_int3(x, y, z);
 		sprite[idx]->draw = true;
-		sprite[idx]->remove = true;
+		sprite[idx]->updated = true;
+		//sprite[idx]->remove = true;
 	}
 }
 
@@ -830,7 +840,7 @@ void World::RemoveSprite( const uint idx )
 	// move sprite to -9999 to keep it from taking CPU cycles
 	sprite[idx]->currPos.x = -9999;
 	sprite[idx]->remove = true;
-	sprite[idx]->draw = false;
+	//sprite[idx]->draw = false;
 }
 
 // World::SetSpriteFrame
@@ -1323,18 +1333,24 @@ void World::Render()
 
 // World::Commit
 // ----------------------------------------------------------------------------
+
+
+
 void World::Commit()
 {
+	static bool first = false;
+	//memset((void*)dirtyGrid, 0, gridSize * sizeof(bool));
+	if (!first)
+	{
+		memcpy(dirtyGrid, grid, gridSize);
+	}
+
 	// add the sprites and particles to the world
 	for (int s = (int)sprite.size(), i = 0; i < s; i++)
 	{
-		if (sprite[i]->draw)
-		{
-			if (sprite[i]->hasShadow)
-				DrawSpriteShadow(i);
-			DrawSprite(i);
-			sprite[i]->draw = false;
-		}
+		if (sprite[i]->hasShadow)
+			DrawSpriteShadow(i);
+		DrawSprite(i);
 	}
 	for (int s = (int)particles.size(), i = 0; i < s; i++) DrawParticles( i );
 	// make sure the previous commit completed
@@ -1381,22 +1397,34 @@ void World::Commit()
 		copyInFlight = true;	// next render should wait for this commit to complete
 		firstFrame = false;		// next frame is not the first frame
 	}
+	
 	// bricks and top-level grid have been moved to the final host-side commit buffer; remove sprites and particles
 	// NOTE: this must explicitly happen in reverse order.
-	for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles( i );
-	for (int s = (int)sprite.size(), i = s - 1; i >= 0; i--)
+	
+	if (first)
 	{
-		if (sprite[i]->remove)
+		//for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles(i);
+		for (int s = (int)sprite.size(), i = s - 1; i >= 0; i--)
 		{
 			EraseSprite(i);
 			if (sprite[i]->hasShadow) RemoveSpriteShadow(i);
-			if (sprite[i]->currPos.x != -9999)
-			{
-				sprite[i]->remove = false;
-				//sprite[i]->draw = true;
-			}
 		}
+		first = false;
 	}
+	else
+	{
+		
+		for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles(i);
+		
+		for (int s = (int)sprite.size(), i = s - 1; i >= 0; i--)
+		{
+			//EraseSprite(i);
+			if (sprite[i]->hasShadow) RemoveSpriteShadow(i);
+		}
+		memcpy(grid, dirtyGrid, gridSize);
+
+	}
+	
 }
 
 // World::StreamCopyMT
