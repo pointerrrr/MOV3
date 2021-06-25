@@ -188,18 +188,24 @@ public:
 		/*const uint bx = x / BRICKDIM;
 		const uint by = y / BRICKDIM;
 		const uint bz = z / BRICKDIM;*/
-		const uint bx = x >> 3;
-		const uint by = y >> 3;
-		const uint bz = z >> 3;
-		if (bx >= GRIDWIDTH || by >= GRIDHEIGHT || bz >= GRIDDEPTH)
-			return;
-		const uint cellIdx = bx + (bz << 7) + (by << 14);
+		const uint bx = x / BRICKDIM;
+		const uint by = y / BRICKDIM;
+		const uint bz = z / BRICKDIM;
+		if (bx >= GRIDWIDTH || by >= GRIDHEIGHT || bz >= GRIDDEPTH) return;
+		const uint cellIdx = bx + bz * GRIDWIDTH + by * GRIDWIDTH * GRIDDEPTH;
 		// obtain current brick identifier from top-level grid
 		uint g = grid[cellIdx], g1 = g >> 1;
+		uint g1o = g1;
 		if ((g & 1) == 0 /* this is currently a 'solid' grid cell */)
 		{
 			if (g1 == v) return; // about to set the same value; we're done here
 			const uint newIdx = NewBrick();
+			if (!dirtyGrid[cellIdx])
+			{
+				dirtyGrid[cellIdx] = true;
+				backupG[cellIdx] = newIdx;
+				memcpy(backupBrick + newIdx * BRICKSIZE, brick + newIdx * BRICKSIZE, BRICKSIZE);
+			}
 		#if BRICKDIM == 8
 			// fully unrolled loop for writing the 512 bytes needed for a single brick, faster than memset
 			const __m256i zero8 = _mm256_set1_epi8( static_cast<char>(g1) );
@@ -215,7 +221,6 @@ public:
 			// we keep track of the number of zeroes, so we can remove fully zeroed bricks
 			brickInfo[newIdx].zeroes = g == 0 ? BRICKSIZE : 0;
 			g1 = newIdx, grid[cellIdx] = g = (newIdx << 1) | 1;
-			dirtyGrid[cellIdx] = true;
 			// brickInfo[newIdx].location = cellIdx; // not used yet
 		}
 		// calculate the position of the voxel inside the brick
@@ -224,6 +229,12 @@ public:
 		const uint cv = brick[voxelIdx];
 		if ((brickInfo[g1].zeroes += (cv != 0 && v == 0) - (cv == 0 && v != 0)) < BRICKSIZE)
 		{
+			if (!dirtyGrid[cellIdx])
+			{
+				dirtyGrid[cellIdx] = true;
+				backupG[cellIdx] = g1;
+				memcpy(backupBrick + g1 * BRICKSIZE, brick + g1 * BRICKSIZE, BRICKSIZE);
+			}
 			brick[voxelIdx] = v;
 			Mark( g1 ); // tag to be synced with GPU
 			return;
@@ -316,6 +327,7 @@ private:
 	uint* grid = 0, *gridOrig = 0;		// pointer to host-side copy of the top-level grid
 	uint* backupGrid = 0;
 	bool* dirtyGrid = 0;
+	uint* backupG = 0;
 	Buffer* brickBuffer;				// OpenCL buffer for the bricks
 	uchar* brick = 0;					// pointer to host-side copy of the bricks
 	uchar* backupBrick = 0;

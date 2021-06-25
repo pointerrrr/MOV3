@@ -54,7 +54,9 @@ World::World( const uint targetID )
 	grid = gridOrig = (uint*)_aligned_malloc( GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4, 64 );
 	backupGrid = (uint*)_aligned_malloc(GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4, 64);
 	dirtyGrid = new bool[GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4];
+	backupG = new uint[GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4];
 	memset(dirtyGrid, 0, GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4);
+	memset(backupG, 0, GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4);
 	memset( grid, 0, GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * sizeof( uint ) );
 	memset(backupGrid, 0, GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * sizeof(uint));
 	DummyWorld();
@@ -1343,6 +1345,8 @@ void World::Render()
 void World::Commit()
 {
 	// add the sprites and particles to the world
+	memcpy(backupGrid, grid, gridSize);
+	memset(dirtyGrid, false, GRIDWIDTH * GRIDHEIGHT * GRIDDEPTH * 4);
 	for (int s = (int)sprite.size(), i = 0; i < s; i++)
 	{
 		if (sprite[i]->hasShadow)
@@ -1399,12 +1403,25 @@ void World::Commit()
 	// NOTE: this must explicitly happen in reverse order.
 	
 	
-	for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles(i);
+	if (commitInFlight) clWaitForEvents(1, &commitDone);
+	
+	
+	//for (int s = (int)particles.size(), i = s - 1; i >= 0; i--) EraseParticles(i);
 	for (int s = (int)sprite.size(), i = s - 1; i >= 0; i--)
 	{
-		EraseSprite(i);
+		//EraseSprite(i);
 		if (sprite[i]->hasShadow) RemoveSpriteShadow(i);
 	}
+	for (int i = 0; i < GRIDSIZE / 4; i++)
+	{
+		if (dirtyGrid[i])
+		{
+			uint g1 = backupG[i];
+
+			memcpy(brick + g1 * BRICKSIZE, backupBrick + g1 * BRICKSIZE, BRICKSIZE);
+		}
+	}
+	memcpy(grid, backupGrid, gridSize);
 	
 }
 
