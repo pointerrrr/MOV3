@@ -1,0 +1,13 @@
+Team:
+Gideon Ogilvie 5936373
+Mike knoop 5853915
+
+First optimization goal: Make the game run in realtime
+Profiling: profiling showed that the bottleneck was primarily located in the draw and erase sprite functions.
+Attempted first Optimization: 
+	We first tried to set entire bricks to their previous state instead of doing this per voxel. Unfortunately we did not suceed with optimizing the code this way
+First optimization:
+	We optimized the get method by changing the coordinate calculation to only use the heavy calculation once and after that only incrementing, multiplying or resetting the result
+Attempted second optimization:
+	After this we tried to do the same as the first optimization in different ways, for example saving a backup of the world and replacing changed/dirty bricks. This however resulted in sometimes wrongly not removing blocks and later corruption of the entire world.
+	We also tried to remove and draw a sprite only if it was initially loaded or once it moved. However this resulted in mainly flickering of sprites.
